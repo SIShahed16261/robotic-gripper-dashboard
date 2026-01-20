@@ -1,158 +1,210 @@
 /*
-  Robotic Gripper ESP32 Firmware
-  Bridge: Arduino IDE -> Supabase
-  
-  REQUIRED LIBRARIES:
-  - Supabase-Arduino (by mrfaptastic)
-  - ArduinoJson
-  - HTTPClient
-*/
+ * ==========================================
+ *   ROBOTIC GRIPPER: IoT FIRMWARE (ESP32)
+ * ==========================================
+ * Project: Robotic Gripper for Emergency Assistance
+ * 
+ * REQUIRED LIBRARIES (Install via Library Manager):
+ * 1. ArduinoJson (by Benoit Blanchon)
+ * 2. HTTPClient (Built-in)
+ * 
+ * HARDWARE CONNECTIONS:
+ * - L298N/BTS7960 PWM -> Pin 12
+ * - L298N/BTS7960 IN1 -> Pin 13
+ * - L298N/BTS7960 IN2 -> Pin 14
+ * - FSR Sensor (Grip) -> Pin 34 (Analog)
+ * - Current Sensor    -> Pin 35 (Analog)
+ */
 
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-// --- CONFIGURATION ---
-const char* ssid = "ENTER_WIFI_SSID";
-const char* password = "ENTER_WIFI_PASSWORD";
+// ==========================================
+// 1. ADD YOUR CREDENTIALS HERE
+// ==========================================
+const char* wifi_ssid     = "YOUR_WIFI_NAME";         // <--- Replace with your WiFi SSID
+const char* wifi_password = "YOUR_WIFI_PASSWORD";     // <--- Replace with your WiFi Password
 
-const String supabaseUrl = "https://bjfamnxlqhjftrasqvpr.supabase.co";
-const String supabaseKey = "sb_publishable_2JzXr_bXZv83mynrDL_wKw_vsYtUo0h";
+const String supabase_url = "https://bjfamnxlqhjftrasqvpr.supabase.co"; // <--- Already configured
+const String supabase_key = "sb_publishable_2JzXr_bXZv83mynrDL_wKw_vsYtUo0h"; // <--- Already configured
 
-// --- PIN DEFINITIONS ---
-const int MOTOR_PWM = 12;
-const int MOTOR_IN1 = 13;
-const int MOTOR_IN2 = 14;
-const int FSR_PIN = 34; // Analog
-const int CURRENT_PIN = 35; // Analog (ACS712)
+// ==========================================
+// 2. PIN CONFIGURATION
+// ==========================================
+const int PIN_MOTOR_PWM = 12;
+const int PIN_MOTOR_IN1 = 13;
+const int PIN_MOTOR_IN2 = 14;
+const int PIN_FSR_SENSE = 34; 
+const int PIN_AMP_SENSE = 35;
 
 void setup() {
   Serial.begin(115200);
   
-  pinMode(MOTOR_PWM, OUTPUT);
-  pinMode(MOTOR_IN1, OUTPUT);
-  pinMode(MOTOR_IN2, OUTPUT);
+  // Setup Motor Pins
+  pinMode(PIN_MOTOR_PWM, OUTPUT);
+  pinMode(PIN_MOTOR_IN1, OUTPUT);
+  pinMode(PIN_MOTOR_IN2, OUTPUT);
   
-  connectWiFi();
+  // Initial Stop
+  stopMotor();
+  
+  // Connect to WiFi
+  connectToWiFi();
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) connectWiFi();
+  // Ensure we stay connected to WiFi
+  if (WiFi.status() != WL_CONNECTED) {
+    connectToWiFi();
+  }
 
-  // 1. Read Sensors
-  int fsrRaw = analogRead(FSR_PIN);
-  int fsrPercent = map(fsrRaw, 0, 4095, 0, 100);
+  // A. READ SENSORS
+  int fsr_raw = analogRead(PIN_FSR_SENSE);
+  int grip_pressure = map(fsr_raw, 0, 4095, 0, 100); // 0-100%
   
-  int currentRaw = analogRead(CURRENT_PIN);
-  float motorCurrent = (currentRaw * 3.3 / 4095.0 - 2.5) / 0.185; // Example ACS712 calculation
+  int amp_raw = analogRead(PIN_AMP_SENSE);
+  float motor_current = (amp_raw * 3.3 / 4095.0); // Simplified for now
+  
+  // B. PUSH DATA TO DASHBOARD (Every 1 second)
+  sendTelemetry(grip_pressure, motor_current);
 
-  // 2. Push Telemetry to Supabase
-  pushTelemetry(fsrPercent, motorCurrent);
+  // C. CHECK FOR COMMANDS FROM WEB UI
+  checkRemoteCommands();
 
-  // 3. Check for New Commands
-  checkCommands();
-
-  delay(1000); // 1-second interval
+  delay(1000); 
 }
 
-void pushTelemetry(int fsr, float current) {
+// --- NETWORK FUNCTIONS ---
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(wifi_ssid);
+  WiFi.begin(wifi_ssid, wifi_password);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Connected!");
+  } else {
+    Serial.println("\nWiFi Failed (Check credentials).");
+  }
+}
+
+// --- SUPABASE API FUNCTIONS ---
+
+void sendTelemetry(int pressure, float current) {
   HTTPClient http;
-  String url = supabaseUrl + "/rest/v1/telemetry";
+  String url = supabase_url + "/rest/v1/telemetry";
   
   http.begin(url);
-  http.addHeader("apikey", supabaseKey);
-  http.addHeader("Authorization", "Bearer " + supabaseKey);
+  http.addHeader("apikey", supabase_key);
+  http.addHeader("Authorization", "Bearer " + supabase_key);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Prefer", "return=minimal");
 
-  StaticJsonDocument<200> doc;
-  doc["fsr_value"] = fsr;
-  doc["motor_current"] = current;
-  doc["temperature"] = 24.5; // Mock data
-  doc["humidity"] = 45;      // Mock data
-  doc["battery_pct"] = 85;
+  // Create JSON Payload
+  StaticJsonDocument<200> body;
+  body["fsr_value"] = pressure;
+  body["motor_current"] = current;
+  body["temperature"] = 26; // Static example, can add sensors later
+  body["humidity"] = 55;
+  body["battery_pct"] = 92;
 
-  String json;
-  serializeJson(doc, json);
+  String json_str;
+  serializeJson(body, json_str);
 
-  int httpCode = http.POST(json);
-  if (httpCode > 0) Serial.println("Telemetry pushed: " + String(httpCode));
+  int http_code = http.POST(json_str);
+  if (http_code > 0) {
+    Serial.printf("[IOT] Telemetry Sent. Response: %d\n", http_code);
+  }
   http.end();
 }
 
-void checkCommands() {
+void checkRemoteCommands() {
   HTTPClient http;
-  // Get the latest PENDING command
-  String url = supabaseUrl + "/rest/v1/commands?status=eq.PENDING&order=created_at.desc&limit=1";
+  // Fetch the latest "PENDING" command
+  String query = supabase_url + "/rest/v1/commands?status=eq.PENDING&order=created_at.desc&limit=1";
   
-  http.begin(url);
-  http.addHeader("apikey", supabaseKey);
-  http.addHeader("Authorization", "Bearer " + supabaseKey);
+  http.begin(query);
+  http.addHeader("apikey", supabase_key);
+  http.addHeader("Authorization", "Bearer " + supabase_key);
   
-  int httpCode = http.GET();
-  if (httpCode == 200) {
+  int http_code = http.GET();
+  if (http_code == 200) {
     String payload = http.getString();
     StaticJsonDocument<500> doc;
     deserializeJson(doc, payload);
-    
+
     if (doc.size() > 0) {
-      String type = doc[0]["type"];
-      int id = doc[0]["id"];
+      String command_type = doc[0]["type"];
+      int command_id = doc[0]["id"];
       
-      Serial.println("Command Received: " + type);
-      
-      if (type == "GRIP") {
-        digitalWrite(MOTOR_IN1, HIGH);
-        digitalWrite(MOTOR_IN2, LOW);
-        analogWrite(MOTOR_PWM, 200);
-      } else if (type == "RELEASE") {
-        digitalWrite(MOTOR_IN1, LOW);
-        digitalWrite(MOTOR_IN2, HIGH);
-        analogWrite(MOTOR_PWM, 200);
-      } else if (type == "STEP_GRIP") {
-        Serial.println("Tightening step (200ms)...");
-        digitalWrite(MOTOR_IN1, HIGH);
-        digitalWrite(MOTOR_IN2, LOW);
-        analogWrite(MOTOR_PWM, 200);
-        delay(200); // 200ms pulse for small movement
-        digitalWrite(MOTOR_IN1, LOW);
-        digitalWrite(MOTOR_IN2, LOW);
-      } else if (type == "STEP_RELEASE") {
-        Serial.println("Loosening step (200ms)...");
-        digitalWrite(MOTOR_IN1, LOW);
-        digitalWrite(MOTOR_IN2, HIGH);
-        analogWrite(MOTOR_PWM, 200);
-        delay(200); // 200ms pulse for small movement
-        digitalWrite(MOTOR_IN1, LOW);
-        digitalWrite(MOTOR_IN2, LOW);
-      }
-      
-      // Mark command as EXECUTED
-      updateCommandStatus(id);
+      executeCommand(command_type, command_id);
     }
   }
   http.end();
 }
 
-void updateCommandStatus(int id) {
+void executeCommand(String type, int id) {
+  Serial.print("Executing: "); Serial.println(type);
+  
+  if (type == "GRIP") {
+    digitalWrite(PIN_MOTOR_IN1, HIGH);
+    digitalWrite(PIN_MOTOR_IN2, LOW);
+    analogWrite(PIN_MOTOR_PWM, 220); // Grip with power
+    delay(2000); // Hold for 2 seconds to engage
+    stopMotor();
+  } 
+  else if (type == "RELEASE") {
+    digitalWrite(PIN_MOTOR_IN1, LOW);
+    digitalWrite(PIN_MOTOR_IN2, HIGH);
+    analogWrite(PIN_MOTOR_PWM, 220);
+    delay(2000); 
+    stopMotor();
+  }
+  else if (type == "STEP_GRIP") {
+    digitalWrite(PIN_MOTOR_IN1, HIGH);
+    digitalWrite(PIN_MOTOR_IN2, LOW);
+    analogWrite(PIN_MOTOR_PWM, 200);
+    delay(250); // Small pulse
+    stopMotor();
+  }
+  else if (type == "STEP_RELEASE") {
+    digitalWrite(PIN_MOTOR_IN1, LOW);
+    digitalWrite(PIN_MOTOR_IN2, HIGH);
+    analogWrite(PIN_MOTOR_PWM, 200);
+    delay(250); // Small pulse
+    stopMotor();
+  }
+  else if (type == "RESET") {
+    stopMotor();
+    Serial.println("System Reset");
+  }
+
+  // IMPORTANT: Tell Supabase we are DONE with this command
+  acknowledgeCommand(id);
+}
+
+void acknowledgeCommand(int id) {
   HTTPClient http;
-  String url = supabaseUrl + "/rest/v1/commands?id=eq." + String(id);
+  String url = supabase_url + "/rest/v1/commands?id=eq." + String(id);
   
   http.begin(url);
-  http.addHeader("apikey", supabaseKey);
-  http.addHeader("Authorization", "Bearer " + supabaseKey);
+  http.addHeader("apikey", supabase_key);
+  http.addHeader("Authorization", "Bearer " + supabase_key);
   http.addHeader("Content-Type", "application/json");
-  
-  int httpCode = http.PATCH("{\"status\":\"EXECUTED\"}");
+
+  int http_code = http.PATCH("{\"status\":\"EXECUTED\"}");
   http.end();
 }
 
-void connectWiFi() {
-  Serial.print("Connecting to: "); Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi Connected");
+void stopMotor() {
+  digitalWrite(PIN_MOTOR_IN1, LOW);
+  digitalWrite(PIN_MOTOR_IN2, LOW);
+  analogWrite(PIN_MOTOR_PWM, 0);
 }
