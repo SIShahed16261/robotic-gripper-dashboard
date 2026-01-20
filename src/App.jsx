@@ -192,10 +192,12 @@ function App() {
 
       <main className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-        {/* LEFT COLUMN: Manual Controls for the Gripper */}
+        {/* LEFT COLUMN: Manual Controls, Environment, and Live Stats */}
         <div className="lg:col-span-4 space-y-6">
+
+          {/* 🎮 ACTUATION ENGINE: Primary controls for the gripper hardware */}
           <div className="glass-card p-6 border-t-4 border-blue-500/50">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Actuation Engine</h2>
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6 text-[10px]">Actuation Engine</h2>
 
             <div className="grid grid-cols-1 gap-4">
               {/* Main Engage/Release Toggle */}
@@ -264,9 +266,9 @@ function App() {
             </div>
           </div>
 
-          {/* Environmental Sensor Display (Temp/Humidity) */}
+          {/* 🌡️ ENVIRONMENT: Sensor Display (Temp/Humidity) */}
           <div className="glass-card p-6">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Environment</h2>
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 text-[10px]">Environment</h2>
             <div className="grid grid-cols-2 gap-4 text-center">
               <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-800/50">
                 <Thermometer className="w-5 h-5 text-orange-400 mx-auto mb-2" />
@@ -280,17 +282,46 @@ function App() {
               </div>
             </div>
           </div>
+
+          {/* ⚡ MOTOR CURRENT: Power Draw Stat Card */}
+          <div className="glass-card p-5 space-y-4">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motor Current</h3>
+            <div className="flex items-center justify-between">
+              <Zap className="w-8 h-8 text-emerald-400" />
+              <span className="text-3xl font-black text-emerald-400">{stats.motorCurrent}A</span>
+            </div>
+            <progress className="progress progress-emerald w-full" value={stats.motorCurrent * 10} max="100"></progress>
+          </div>
+
+          {/* 🦾 GRIP PRESSURE: FSR Reading Stat Card */}
+          <div className="glass-card p-5 space-y-4">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Grip Pressure</h3>
+            <div className="flex items-center justify-between">
+              <Activity className="w-8 h-8 text-blue-400" />
+              <span className="text-3xl font-black text-blue-400">{stats.fsrValue}%</span>
+            </div>
+            <progress className="progress progress-primary w-full" value={stats.fsrValue} max="100"></progress>
+          </div>
+
+          {/* 🔋 SYSTEM POWER: Battery Level Stat Card */}
+          <div className="glass-card p-5 space-y-4">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">System Power</h3>
+            <div className="flex items-center justify-between">
+              <Power className={`w-8 h-8 ${stats.battery > 20 ? 'text-green-400' : 'text-red-400'}`} />
+              <span className="text-3xl font-black">{stats.battery}%</span>
+            </div>
+            <progress className={`progress w-full ${stats.battery > 20 ? 'progress-success' : 'progress-error'}`} value={stats.battery} max="100"></progress>
+          </div>
         </div>
 
-        {/*  CENTER COLUMN: Real-Time Telemetry and Data Logging */}
+        {/*  CENTER COLUMN: Live Video, Telemetry Charts, and Logs */}
         <div className="lg:col-span-8 space-y-6">
 
-          {/* Live Graph: Motor Load vs Grip Pressure */}
           {/* 📹 VISUAL MONITORING: Live ESP32-CAM Stream */}
-          <div className="glass-card p-6 overflow-hidden">
+          <div className="glass-card p-5 overflow-hidden">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
               <div>
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Visual Monitoring</h2>
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest text-[10px]">Visual Monitoring</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${isCameraActive ? 'bg-red-500 pulse-led' : 'bg-slate-600'}`}></div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase">{isCameraActive ? 'LIVE FEED ACTIVE' : 'CAMERA STANDBY'}</span>
@@ -302,7 +333,7 @@ function App() {
                   <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
                   <input
                     type="text"
-                    placeholder="Camera Stream URL (e.g. 192.168.1.50:81/stream)"
+                    placeholder="Camera IP"
                     className="input input-sm input-bordered w-full pl-8 bg-black/20 text-xs border-slate-800"
                     value={cameraIp}
                     onChange={(e) => setCameraIp(e.target.value)}
@@ -313,17 +344,16 @@ function App() {
                   className={`btn btn-sm ${isCameraActive ? 'btn-error' : 'btn-primary'}`}
                 >
                   {isCameraActive ? <CameraOff className="w-4 h-4" /> : <Camera className="w-4 h-4" />}
-                  {isCameraActive ? 'STOP' : 'START'}
                 </button>
               </div>
             </div>
 
-            <div className="relative aspect-video bg-black/40 rounded-xl border border-slate-800 overflow-hidden group">
+            <div className="relative aspect-video max-h-[450px] mx-auto bg-black/40 rounded-xl border border-slate-800 overflow-hidden group">
               {isCameraActive && cameraIp ? (
                 <img
                   src={`http://${cameraIp}`}
                   alt="ESP32-CAM Stream"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   onError={() => {
                     setIsCameraActive(false);
                     addLog("Error: Failed to connect to Camera. Check IP address.");
@@ -344,17 +374,18 @@ function App() {
             </div>
           </div>
 
+          {/* 📊 TELEMETRY: Live Graph (Motor Load vs Grip Pressure) */}
           <div className="glass-card p-6 h-[400px]">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Live Force-Sense Telemetry</h2>
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest text-[10px]">Live Force-Sense Telemetry</h2>
               <div className="flex gap-4">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Grip Force</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase underline">Grip Force</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Motor Load</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase underline">Motor Load</span>
                 </div>
               </div>
             </div>
@@ -386,39 +417,9 @@ function App() {
             </div>
           </div>
 
-          {/* Quick Stats: Current, Pressure, and Battery level */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motor Current</h3>
-              <div className="flex items-center justify-between">
-                <Zap className="w-8 h-8 text-emerald-400" />
-                <span className="text-3xl font-black text-emerald-400">{stats.motorCurrent}A</span>
-              </div>
-              <progress className="progress progress-emerald w-full" value={stats.motorCurrent * 10} max="100"></progress>
-            </div>
-
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Grip Pressure</h3>
-              <div className="flex items-center justify-between">
-                <Activity className="w-8 h-8 text-blue-400" />
-                <span className="text-3xl font-black text-blue-400">{stats.fsrValue}%</span>
-              </div>
-              <progress className="progress progress-primary w-full" value={stats.fsrValue} max="100"></progress>
-            </div>
-
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">System Power</h3>
-              <div className="flex items-center justify-between">
-                <Power className={`w-8 h-8 ${stats.battery > 20 ? 'text-green-400' : 'text-red-400'}`} />
-                <span className="text-3xl font-black">{stats.battery}%</span>
-              </div>
-              <progress className={`progress w-full ${stats.battery > 20 ? 'progress-success' : 'progress-error'}`} value={stats.battery} max="100"></progress>
-            </div>
-          </div>
-
-          {/* Activity Terminal: Shows history of commands and status */}
+          {/* 📝 LOGS: Activity Terminal shows history of commands and status */}
           <div className="glass-card p-6">
-            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Command Logs</h2>
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 text-[10px]">Command Logs</h2>
             <div className="bg-black/40 rounded-lg p-4 font-mono text-xs h-32 overflow-y-auto border border-slate-800 space-y-1">
               {logs.map((log, i) => (
                 <div key={i} className="flex gap-4">
